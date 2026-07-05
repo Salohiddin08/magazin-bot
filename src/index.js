@@ -1,18 +1,15 @@
 require('dotenv').config();
-const { Telegraf, Markup, Input } = require('telegraf');
-const { Readable } = require('stream');
+const { Telegraf, Markup } = require('telegraf');
 const prisma = require('./db');
 const { formatSum, getRange, formatDate } = require('./utils');
 const { parseExpense, parseExpenseMultiline, parseDateRange } = require('./parser');
 const { dailyReport, weeklyReport, monthlyReport, customReport } = require('./report');
-const { generateExcelReport } = require('./excel');
 const { initScheduler } = require('./scheduler');
 
-// ---- Web server (single process uchun) ----
+// ---- Web server (single process) ----
 const path = require('path');
 const express = require('express');
 const stats = require('./web/stats');
-const { getRange: getR } = require('./utils');
 
 const webApp = express();
 const WEB_PORT = process.env.WEB_PORT || 3000;
@@ -36,48 +33,12 @@ webApp.get('/api/report', async (req, res) => {
   }
 });
 
-// Excel yuklab olish
-webApp.get('/api/report/excel', async (req, res) => {
-  try {
-    let start, end;
-    const { period, start: queryStart, end: queryEnd } = req.query;
-
-    if (queryStart && queryEnd) {
-      start = new Date(queryStart);
-      end = new Date(queryEnd);
-    } else {
-      const p = (period || 'kunlik').toLowerCase();
-      const range = getR(p);
-      start = range.start;
-      end = range.end;
-    }
-
-    const expenses = await prisma.expense.findMany({
-      where: { createdAt: { gte: start, lte: end } },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    const title = 'Xarajatlar Hisoboti';
-    const subtitle = `${formatDate(start)} - ${formatDate(end)}`;
-    const excelBuffer = await generateExcelReport(expenses, title, subtitle);
-    const filename = `${subtitle.replace(/\s+/g, '_')}_hisobot.xlsx`;
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(excelBuffer);
-  } catch (err) {
-    console.error('Web Excel xatosi:', err);
-    res.status(500).send('Excel faylini shakllantirishda xatolik yuz berdi.');
-  }
-});
-
-// Yangi xarajat qo'shish
+// Yangi xarajat qo'shish (veb)
 webApp.post('/api/expenses', async (req, res) => {
   try {
     const { product, quantity, price, note, addedBy } = req.body;
-    if (!product || typeof product !== 'string' || !product.trim()) {
+    if (!product || typeof product !== 'string' || !product.trim())
       return res.status(400).json({ ok: false, error: "Mahsulot nomi kiritilmagan." });
-    }
     const qty = Number(quantity);
     const prc = Number(price);
     if (Number.isNaN(qty) || qty <= 0)
@@ -95,7 +56,6 @@ webApp.post('/api/expenses', async (req, res) => {
         addedById: BigInt(0),
       },
     });
-
     res.json({ ok: true, data: { ...expense, addedById: expense.addedById.toString() } });
   } catch (err) {
     console.error("Xarajat qo'shishda xatolik:", err);
@@ -103,7 +63,7 @@ webApp.post('/api/expenses', async (req, res) => {
   }
 });
 
-// Xarajatni o'chirish
+// Xarajatni o'chirish (veb)
 webApp.delete('/api/expenses/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -117,7 +77,6 @@ webApp.delete('/api/expenses/:id', async (req, res) => {
   }
 });
 
-// Web serverni ishga tushirish
 webApp.listen(WEB_PORT, () => {
   console.log(`✅ Veb-server ishga tushdi: ${WEB_URL}`);
 });
@@ -133,7 +92,7 @@ if (!BOT_TOKEN) {
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Callback query timeout xatolarini yumshatish uchun middleware
+// Callback query timeout xatolarini yumshatish
 bot.use(async (ctx, next) => {
   if (ctx.callbackQuery) {
     const originalAnswer = ctx.answerCbQuery.bind(ctx);
@@ -145,9 +104,7 @@ bot.use(async (ctx, next) => {
           err.description &&
           (err.description.includes('query is too old') ||
             err.description.includes('query ID is invalid'))
-        ) {
-          return; // Eski so'rovlarni e'tiborsiz qoldiramiz
-        }
+        ) return;
         console.error('Callback Query javob xatosi:', err);
       }
     };
@@ -165,7 +122,6 @@ function getMainMenuKeyboard() {
       Markup.button.callback('📆 Oylik hisobot', 'report_monthly'),
       Markup.button.callback('🔍 Boshqa davr', 'report_custom'),
     ],
-    [Markup.button.callback('📊 Excel yuklab olish', 'excel_menu')],
   ]);
 }
 
@@ -194,13 +150,40 @@ async function saveUser(ctx) {
 }
 
 /**
- * Buffer'dan Telegram'ga fayl yuborish.
- * Input.fromBuffer dan foydalanish — to'g'ri usul Telegraf 4.x da.
+ * Kunlik ro'yxatni har bir yozuv uchun "O'chirish" tugmasi bilan yuboradi.
+ * Har bir yozuv alohida xabar sifatida yuboriladi → o'chirish qulay.
  */
-async function sendExcelBuffer(telegramTarget, buffer, filename) {
-  // Telegraf 4.x: Input.fromBuffer(buffer, filename) → { source: ReadableStream, filename }
-  const source = Input.fromBuffer(buffer, filename);
-  await telegramTarget.sendDocument(source);
+async function sendDailyListWithDeleteButtons(ctx) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+
+  const expenses = await prisma.expense.findMany({
+    where: { createdAt: { gte: start, lte: end } },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (expenses.length === 0) {
+    await ctx.reply("Bu kunda hali xarajat yo'q.");
+    return;
+  }
+
+  const total = expenses.reduce((sum, e) => sum + e.price, 0);
+  await ctx.reply(`📋 Bugungi xarajatlar ro'yxati:\n(Har birini o'chirish uchun ❌ tugmasini bosing)\n\nJami: ${formatSum(total)} so'm`);
+
+  for (const e of expenses) {
+    const timeStr = e.createdAt.toTimeString().slice(0, 5);
+    const text =
+      `🕐 ${timeStr}  |  ${e.product}\n` +
+      `💰 ${formatSum(e.price)} so'm  •  Miqdor: ${e.quantity}` +
+      (e.note ? `\n📝 ${e.note}` : '') +
+      `\n👤 ${e.addedBy}`;
+
+    await ctx.reply(text, Markup.inlineKeyboard([
+      [Markup.button.callback(`❌ O'chirish`, `del_${e.id}`)],
+    ]));
+  }
 }
 
 // /start
@@ -208,20 +191,19 @@ bot.start(async (ctx) => {
   await saveUser(ctx);
   await ctx.reply(
     "Assalomu alaykum! Men magazin xarajatlarini hisobga oluvchi botman.\n\n" +
-      "1️⃣ Xarajat qo'shish:\n" +
-      "  • Tezkor: `+ Non 20 120000` (mahsulot, miqdor, narx)\n" +
-      "  • Batafsil:\n" +
-      "    Kategoriya: Non\n" +
-      "    Miqdor: 20\n" +
-      "    Narx: 120000\n" +
-      "    Izoh: ixtiyoriy yozuv\n\n" +
-      "2️⃣ Excel hisobotlar:\n" +
-      "  • Istalgan vaqtda Excel yuklab olishingiz mumkin.\n" +
-      "  • Har kuni 23:59 da kunlik Excel avtomatik yuboriladi.\n" +
-      "  • Yakshanba kuni haftalik, oy oxirida oylik Excel avtomat yuboriladi.\n\n" +
-      "3️⃣ Maxsus davr:\n" +
-      "  • `1-15` deb kiriting — 1 dan 15 gacha hisobot olasiz.\n\n" +
-      "Quyidagi tugmalardan birini bosing:",
+    "1️⃣ Xarajat qo'shish:\n" +
+    "  • Tezkor: `+ Non 20 120000` (mahsulot, miqdor, narx)\n" +
+    "  • Batafsil:\n" +
+    "    Kategoriya: Non\n" +
+    "    Miqdor: 20\n" +
+    "    Narx: 120000\n" +
+    "    Izoh: ixtiyoriy yozuv\n\n" +
+    "2️⃣ Hisobotlar:\n" +
+    "  • Bugungi, haftalik, oylik, yoki maxsus davr uchun.\n" +
+    "  • Har kuni 23:59 da kunlik hisobot avtomatik yuboriladi.\n\n" +
+    "3️⃣ Xarajatni o'chirish:\n" +
+    "  • Bugungi ro'yxatda har bir yozuv yonida ❌ tugmasi bor.\n\n" +
+    "Quyidagi tugmalardan birini bosing:",
     { parse_mode: 'Markdown', ...getMainMenuKeyboard() }
   );
 });
@@ -243,13 +225,9 @@ bot.command('hisobot', async (ctx) => {
     const period = (args[0] || 'kunlik').toLowerCase();
 
     let text;
-    if (period === 'haftalik' || period === 'hafta') {
-      text = await weeklyReport();
-    } else if (period === 'oylik' || period === 'oy') {
-      text = await monthlyReport();
-    } else {
-      text = await dailyReport();
-    }
+    if (period === 'haftalik' || period === 'hafta') text = await weeklyReport();
+    else if (period === 'oylik' || period === 'oy') text = await monthlyReport();
+    else text = await dailyReport();
 
     await ctx.reply(text);
   } catch (err) {
@@ -258,15 +236,19 @@ bot.command('hisobot', async (ctx) => {
   }
 });
 
-// Button callbacks
+// /royxat — o'chirish tugmalari bilan bugungi ro'yxat
+bot.command('royxat', async (ctx) => {
+  await sendDailyListWithDeleteButtons(ctx);
+});
+
+// Hisobot tugmalari
 bot.action('report_daily', async (ctx) => {
   await ctx.answerCbQuery();
   try {
     const text = await dailyReport();
-    await ctx.reply(
-      text,
-      Markup.inlineKeyboard([[Markup.button.callback('📊 Excel formatida yuklash', 'excel_daily')]])
-    );
+    await ctx.reply(text, Markup.inlineKeyboard([
+      [Markup.button.callback("🗑 Ro'yxat (o'chirish bilan)", 'show_delete_list')],
+    ]));
   } catch (err) {
     console.error(err);
     await ctx.reply('❌ Xatolik yuz berdi.');
@@ -277,10 +259,7 @@ bot.action('report_weekly', async (ctx) => {
   await ctx.answerCbQuery();
   try {
     const text = await weeklyReport();
-    await ctx.reply(
-      text,
-      Markup.inlineKeyboard([[Markup.button.callback('📊 Excel formatida yuklash', 'excel_weekly')]])
-    );
+    await ctx.reply(text);
   } catch (err) {
     console.error(err);
     await ctx.reply('❌ Xatolik yuz berdi.');
@@ -291,10 +270,7 @@ bot.action('report_monthly', async (ctx) => {
   await ctx.answerCbQuery();
   try {
     const text = await monthlyReport();
-    await ctx.reply(
-      text,
-      Markup.inlineKeyboard([[Markup.button.callback('📊 Excel formatida yuklash', 'excel_monthly')]])
-    );
+    await ctx.reply(text);
   } catch (err) {
     console.error(err);
     await ctx.reply('❌ Xatolik yuz berdi.');
@@ -306,84 +282,46 @@ bot.action('report_custom', async (ctx) => {
   userSessions.set(ctx.from.id, { state: 'waiting_for_date_range' });
   await ctx.reply(
     '🔍 Maxsus davr uchun hisobot olish.\n\n' +
-      'Iltimos, hisobot davrini quyidagi formatlardan birida kiriting:\n' +
-      '• `1-15` (joriy oyning 1-15 kunlari)\n' +
-      '• `1 dan 15 gacha`\n' +
-      '• `01.07-15.07` (joriy yil)\n' +
-      '• `01.07.2026-15.07.2026` (to\'liq sana)\n\n' +
-      'Jarayonni bekor qilish uchun /cancel deb yozing.',
+    'Iltimos, hisobot davrini kiriting:\n' +
+    '• `1-15` (joriy oyning 1-15 kunlari)\n' +
+    '• `01.07-15.07`\n' +
+    '• `01.07.2026-15.07.2026`\n\n' +
+    'Bekor qilish: /cancel',
     { parse_mode: 'Markdown' }
   );
 });
 
-bot.action('excel_menu', async (ctx) => {
+// O'chirish tugmalari bilan ro'yxat ko'rsatish
+bot.action('show_delete_list', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply(
-    '📊 Excel formatidagi hisobotni tanlang:',
-    Markup.inlineKeyboard([
-      [Markup.button.callback('📅 Bugungi Excel', 'excel_daily')],
-      [Markup.button.callback('🗓 Haftalik Excel', 'excel_weekly')],
-      [Markup.button.callback('📆 Oylik Excel', 'excel_monthly')],
-    ])
-  );
+  await sendDailyListWithDeleteButtons(ctx);
 });
 
-bot.action('excel_daily', async (ctx) => {
+// Xarajatni o'chirish: del_{id} formatidagi callback
+bot.action(/^del_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  await sendExcelForPeriod(ctx, 'kunlik');
-});
+  const expenseId = parseInt(ctx.match[1], 10);
 
-bot.action('excel_weekly', async (ctx) => {
-  await ctx.answerCbQuery();
-  await sendExcelForPeriod(ctx, 'haftalik');
-});
-
-bot.action('excel_monthly', async (ctx) => {
-  await ctx.answerCbQuery();
-  await sendExcelForPeriod(ctx, 'oylik');
-});
-
-async function sendExcelForPeriod(ctx, period) {
-  let waitMsg;
   try {
-    waitMsg = await ctx.reply('⏳ Excel fayl shakllantirilmoqda, iltimos kuting...');
-    const { start, end } = getRange(period);
-    const expenses = await prisma.expense.findMany({
-      where: { createdAt: { gte: start, lte: end } },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    let title = 'Xarajatlar Hisoboti';
-    let subtitle = '';
-
-    if (period === 'kunlik') {
-      title = 'Kunlik Xarajatlar Hisoboti';
-      subtitle = formatDate(start);
-    } else if (period === 'haftalik') {
-      title = 'Haftalik Xarajatlar Hisoboti';
-      subtitle = `${formatDate(start)} - ${formatDate(end)}`;
-    } else if (period === 'oylik') {
-      title = 'Oylik Xarajatlar Hisoboti';
-      subtitle = start.toLocaleString('uz-UZ', { month: 'long', year: 'numeric' });
+    const expense = await prisma.expense.findUnique({ where: { id: expenseId } });
+    if (!expense) {
+      await ctx.editMessageText("⚠️ Bu yozuv allaqachon o'chirilgan.");
+      return;
     }
 
-    const excelBuffer = await generateExcelReport(expenses, title, subtitle);
-    const filename = `${subtitle.replace(/[\s/\\:*?"<>|]+/g, '_')}_hisobot.xlsx`;
+    await prisma.expense.delete({ where: { id: expenseId } });
 
-    await ctx.replyWithDocument(Input.fromBuffer(excelBuffer, filename));
-  } catch (err) {
-    console.error('Excel yuborishda xatolik:', err);
-    // Fallback: veb-havola orqali yuklab olish
-    const downloadUrl = `${WEB_URL}/api/report/excel?period=${period}`;
-    await ctx.reply(
-      '⚠️ Excel faylini to\'g\'ridan-to\'g\'ri Telegram orqali yuborib bo\'lmadi.\n\n' +
-        '📥 Quyidagi havoladan yuklab oling:\n' +
-        `🔗 ${downloadUrl}`
+    // Xabarni yangilash — o'chirildi deb ko'rsatish
+    await ctx.editMessageText(
+      `✅ O'chirildi: ${expense.product} — ${formatSum(expense.price)} so'm`
     );
+  } catch (err) {
+    console.error("O'chirishda xatolik:", err);
+    await ctx.answerCbQuery("❌ O'chirishda xatolik yuz berdi.", { show_alert: true });
   }
-}
+});
 
-// Oddiy matnli xabarlarni qayta ishlash
+// Matnli xabarlarni qayta ishlash
 bot.on('text', async (ctx) => {
   await saveUser(ctx);
   const text = ctx.message.text.trim();
@@ -396,9 +334,7 @@ bot.on('text', async (ctx) => {
     const range = parseDateRange(text);
     if (!range) {
       await ctx.reply(
-        "❌ Noto'g'ri sana formati. Iltimos, quyidagicha kiriting:\n" +
-          'Masalan: `1-15` yoki `01.07-15.07`\n\n' +
-          'Bekor qilish uchun /cancel deb yozing.',
+        "❌ Noto'g'ri sana formati. Masalan: `1-15` yoki `01.07-15.07`\n\nBekor qilish: /cancel",
         { parse_mode: 'Markdown' }
       );
       return;
@@ -408,32 +344,12 @@ bot.on('text', async (ctx) => {
     const { start, end } = range;
 
     try {
-      const loadingMsg = await ctx.reply('⏳ Hisobot tayyorlanmoqda...');
-
+      await ctx.reply('⏳ Hisobot tayyorlanmoqda...');
       const reportText = await customReport(start, end);
       await ctx.reply(reportText);
-
-      const expenses = await prisma.expense.findMany({
-        where: { createdAt: { gte: start, lte: end } },
-        orderBy: { createdAt: 'asc' },
-      });
-
-      const excelBuffer = await generateExcelReport(
-        expenses,
-        'Maxsus Xarajatlar Hisoboti',
-        `${formatDate(start)} - ${formatDate(end)}`
-      );
-
-      const filename = `${formatDate(start)}_${formatDate(end)}_hisobot.xlsx`;
-      await ctx.replyWithDocument(Input.fromBuffer(excelBuffer, filename));
     } catch (err) {
       console.error('Custom report error:', err);
-      const downloadUrl = `${WEB_URL}/api/report/excel?start=${start.toISOString()}&end=${end.toISOString()}`;
-      await ctx.reply(
-        "⚠️ Excel faylini Telegram orqali yuborib bo'lmadi.\n\n" +
-          '📥 Brauzer orqali yuklab oling:\n' +
-          `🔗 ${downloadUrl}`
-      );
+      await ctx.reply('❌ Hisobotni chiqarishda xatolik yuz berdi.');
     }
     return;
   }
@@ -460,7 +376,7 @@ bot.on('text', async (ctx) => {
       ? `@${from.username}`
       : [from.first_name, from.last_name].filter(Boolean).join(' ');
 
-    await prisma.expense.create({
+    const expense = await prisma.expense.create({
       data: {
         product: parsed.product,
         quantity: parsed.quantity,
@@ -483,7 +399,14 @@ bot.on('text', async (ctx) => {
     });
 
     const total = todayTotal._sum.price || 0;
-    await ctx.reply(`✅ Saqlandi.\n\nBugungi jami xarajat:\n${formatSum(total)} so'm`);
+
+    // Saqlandi xabari + O'chirish tugmasi
+    await ctx.reply(
+      `✅ Saqlandi: ${parsed.product} — ${formatSum(parsed.price)} so'm\n\nBugungi jami: ${formatSum(total)} so'm`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback(`❌ Bu yozuvni o'chirish`, `del_${expense.id}`)],
+      ])
+    );
   } catch (err) {
     console.error('Xarajat saqlashda xatolik:', err);
     await ctx.reply("❌ Saqlashda xatolik yuz berdi. Qaytadan urinib ko'ring.");
@@ -505,6 +428,5 @@ main().catch((err) => {
   process.exit(1);
 });
 
-// Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

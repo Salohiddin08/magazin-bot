@@ -11,16 +11,10 @@ telegraf@^4.16.3
 # ORM (ma'lumotlar bazasi bilan ishlash)
 @prisma/client@^5.22.0
 
-# SQLite ma'lumotlar bazasi (Prisma orqali)
-# prisma@^5.22.0  ← devDependency (faqat migrate/generate uchun)
-
-# Excel fayl yaratish
-exceljs@^4.4.0
-
 # Vaqt bo'yicha vazifalar rejalashtirish (cron)
 node-cron@^4.6.0
 
-# Veb-server (Excel yuklab olish va API uchun)
+# Veb-server (API va statik sahifalar uchun)
 express@^4.21.1
 
 # Environment variables (.env fayl o'qish)
@@ -59,7 +53,7 @@ prisma@^5.22.0
 # =============================
 #
 # BOT_TOKEN=<Telegram bot tokeni>
-# DATABASE_URL="file:./dev.db"
-# ADMIN_CHAT_ID=<Telegram chat ID>
+# DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME"
+# ADMIN_CHAT_ID=<Telegram chat ID>   (ixtiyoriy)
 # WEB_PORT=3000
-# WEB_URL=https://your-domain.com   ← deploy qilinganda
+# WEB_URL=https://your-domain.com   (deploy qilinganda)
