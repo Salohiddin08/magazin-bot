@@ -1,0 +1,65 @@
+# Node.js versiyasi
+node >= 18.0.0
+
+# =============================
+# Production dependencies (npm)
+# =============================
+
+# Telegram bot framework
+telegraf@^4.16.3
+
+# ORM (ma'lumotlar bazasi bilan ishlash)
+@prisma/client@^5.22.0
+
+# SQLite ma'lumotlar bazasi (Prisma orqali)
+# prisma@^5.22.0  ← devDependency (faqat migrate/generate uchun)
+
+# Excel fayl yaratish
+exceljs@^4.4.0
+
+# Vaqt bo'yicha vazifalar rejalashtirish (cron)
+node-cron@^4.6.0
+
+# Veb-server (Excel yuklab olish va API uchun)
+express@^4.21.1
+
+# Environment variables (.env fayl o'qish)
+dotenv@^16.4.5
+
+# =============================
+# Dev dependencies
+# =============================
+
+# Avtomatik qayta ishga tushirish (faqat development uchun)
+nodemon@^3.1.7
+
+# Prisma CLI (migrate va generate uchun)
+prisma@^5.22.0
+
+# =============================
+# O'rnatish buyruqlari
+# =============================
+#
+# 1. Barcha paketlarni o'rnatish:
+#    npm install
+#
+# 2. Ma'lumotlar bazasini yaratish (birinchi marta):
+#    npx prisma migrate dev --name init
+#
+# 3. Faqat production uchun o'rnatish:
+#    npm install --production
+#    npx prisma generate
+#    npx prisma migrate deploy
+#
+# 4. Botni ishga tushirish:
+#    npm start
+#
+# =============================
+# .env faylida bo'lishi kerak
+# =============================
+#
+# BOT_TOKEN=<Telegram bot tokeni>
+# DATABASE_URL="file:./dev.db"
+# ADMIN_CHAT_ID=<Telegram chat ID>
+# WEB_PORT=3000
+# WEB_URL=https://your-domain.com   ← deploy qilinganda

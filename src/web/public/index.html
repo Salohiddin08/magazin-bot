@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daftar — Magazin hisobi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">✎</span>
+      <div>
+        <h1>Daftar</h1>
+        <p class="tagline">Magazin xarajatlar kundaligi</p>
+      </div>
+    </div>
+    <div class="date-pill" id="todayLabel"></div>
+  </header>
+
+  <!-- Signature element: kassa cheki uslubidagi "bugungi jami" tasmasi -->
+  <section class="receipt" aria-label="Bugungi jami xarajat">
+    <div class="receipt-body">
+      <p class="receipt-line">BUGUNGI JAMI XARAJAT</p>
+      <p class="receipt-total" id="todayTotal">0 <span>so'm</span></p>
+      <p class="receipt-line receipt-count" id="todayCount">0 ta yozuv</p>
+    </div>
+    <div class="receipt-teeth" aria-hidden="true"></div>
+  </section>
+
+  <div class="grid">
+
+    <!-- Xarajat qo'shish -->
+    <section class="card form-card">
+      <h2>Yangi xarajat</h2>
+      <form id="expenseForm">
+        <label>
+          Mahsulot
+          <input type="text" name="product" placeholder="Masalan: Non" required />
+        </label>
+        <div class="row-2">
+          <label>
+            Miqdor
+            <input type="number" name="quantity" step="any" min="0.01" placeholder="20" required />
+          </label>
+          <label>
+            Narx (so'm)
+            <input type="number" name="price" step="any" min="1" placeholder="120000" required />
+          </label>
+        </div>
+        <label>
+          Izoh <span class="optional">(ixtiyoriy)</span>
+          <input type="text" name="note" placeholder="Masalan: ertalabki yetkazma" />
+        </label>
+        <label>
+          Kim qo'shmoqda <span class="optional">(ixtiyoriy)</span>
+          <input type="text" name="addedBy" placeholder="Ismingiz" />
+        </label>
+        <button type="submit">Saqlash</button>
+        <p class="form-msg" id="formMsg"></p>
+      </form>
+    </section>
+
+    <!-- Hisobot -->
+    <section class="card report-card">
+      <div class="report-head">
+        <h2>Hisobot</h2>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-period="kunlik">Kunlik</button>
+          <button class="tab" data-period="haftalik">Haftalik</button>
+          <button class="tab" data-period="oylik">Oylik</button>
+        </div>
+      </div>
+
+      <p class="range-label" id="rangeLabel"></p>
+
+      <div id="daysBlock" class="days-block" hidden>
+        <div class="days-list" id="daysList"></div>
+      </div>
+
+      <div id="biggestBlock" class="biggest-block" hidden></div>
+
+      <div class="ledger-wrap">
+        <table class="ledger">
+          <thead>
+            <tr>
+              <th>Vaqt</th>
+              <th>Mahsulot</th>
+              <th>Miqdor</th>
+              <th class="num">Narx</th>
+              <th>Qo'shgan</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="ledgerBody">
+            <tr><td colspan="6" class="empty">Yuklanmoqda...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="foot">Daftar · kichik magazinlar uchun oddiy hisob-kitob</footer>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

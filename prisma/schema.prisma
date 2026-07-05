@@ -1,0 +1,31 @@
+// Prisma schema - Magazin hisob-kitob boti
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Expense {
+  id        Int      @id @default(autoincrement())
+  product   String // Mahsulot nomi
+  quantity  Float // Miqdor
+  price     Float // Umumiy narx (so'mda)
+  note      String? // Izoh (ixtiyoriy)
+  addedBy   String // Kim qo'shgani (Telegram username yoki ismi)
+  addedById BigInt // Telegram user id
+  createdAt DateTime @default(now()) // Sana va vaqt
+
+  @@index([createdAt])
+}
+
+model User {
+  id        BigInt   @id // Telegram user id
+  username  String? // Telegram username
+  firstName String // Telegram ism
+  lastName  String? // Telegram familiya
+  createdAt DateTime @default(now()) // Qo'shilgan sana
+}

@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment variables (maxfiy ma'lumotlar)
+.env
+
+# SQLite ma'lumotlar bazasi fayllari
+prisma/dev.db
+prisma/dev.db-journal
+prisma/*.db
+prisma/*.db-journal
+
+# Production build
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS fayllar
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temp fayllar
+*.tmp
+*.temp
